@@ -60,6 +60,36 @@ def scrape():
 
 def extract_company_name(soup, url):
     """Extract company name from various sources"""
+    # Try to extract clear handle from URL path first (helps with LinkedIn, Twitter, Instagram)
+    try:
+        parts = url.split('/')
+        if len(parts) > 3:
+            domain = parts[2].lower()
+            # LinkedIn company or profile pages
+            if 'linkedin.com' in domain:
+                # patterns: /company/<slug>, /in/<slug>, /pub/<slug>
+                for key in ['company', 'in', 'pub', 'school', 'groups']:
+                    if key in parts:
+                        idx = parts.index(key)
+                        if idx + 1 < len(parts) and parts[idx+1]:
+                            slug = parts[idx+1].strip()
+                            # clean slug
+                            slug = slug.split('?')[0].split('#')[0]
+                            name = slug.replace('-', ' ').replace('_', ' ').title()
+                            return name
+            # Twitter, Instagram public handles
+            if 'twitter.com' in domain or 'x.com' in domain:
+                # pattern: /<handle>
+                handle = parts[3] if len(parts) > 3 else ''
+                if handle:
+                    return handle.replace('_', ' ').title()
+            if 'instagram.com' in domain or 'facebook.com' in domain:
+                handle = parts[3] if len(parts) > 3 else ''
+                if handle:
+                    return handle.replace('_', ' ').title()
+    except Exception:
+        pass
+
     # Try meta tags
     og_site_name = soup.find('meta', property='og:site_name')
     if og_site_name:
@@ -67,13 +97,17 @@ def extract_company_name(soup, url):
     
     # Try title
     title = soup.find('title')
-    if title:
+    if title and title.string:
         name = title.string.split('|')[0].split('-')[0].strip()
-        return name
+        if name:
+            return name
     
-    # Extract from URL
-    domain = url.split('/')[2].replace('www.', '').split('.')[0]
-    return domain.capitalize()
+    # Extract from URL domain as last resort
+    try:
+        domain = url.split('/')[2].replace('www.', '').split('.')[0]
+        return domain.capitalize()
+    except Exception:
+        return ''
 
 
 def extract_title(soup):

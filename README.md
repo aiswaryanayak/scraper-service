@@ -12,6 +12,7 @@ Professional web scraping API service that extracts structured data from startup
 - ✅ Contact information
 - ✅ Social media links
 - ✅ Clean text content
+- ✅ **Playwright JS rendering** - handles React/Vue/Angular sites
 
 ## Deploy to Render
 
@@ -26,14 +27,43 @@ Professional web scraping API service that extracts structured data from startup
 3. **Configure:**
    - **Name:** `ai-fundraising-scraper`
    - **Environment:** Python 3
-   - **Build Command:** `pip install -r requirements.txt`
+   - **Build Command:** `chmod +x build.sh && ./build.sh`
    - **Start Command:** `gunicorn app:app`
-   - **Plan:** Free
+   - **Plan:** Free (or Starter for better performance)
    
-4. **Deploy:**
+   > ⚠️ **Important:** The `runtime.txt` file pins Python to 3.11.7 for Playwright compatibility. The build command installs Chromium browser for JS-heavy sites.
+
+4. **Files Required:**
+   - `runtime.txt` - Specifies Python 3.11.7 (required for greenlet/Playwright)
+   - `build.sh` - Installs dependencies + attempts Playwright (optional)
+   - `requirements.txt` - Core Python packages
+   - `Procfile` - Gunicorn start command
+   
+   > **Note:** Playwright for JS rendering is optional. If it fails to install (Python version incompatibility), the scraper still works for static HTML sites. For JS-heavy sites, you may need to use Render's Docker deployment with a custom Python version.
+   
+5. **Deploy:**
    - Click "Create Web Service"
-   - Wait 2-3 minutes for deployment
+   - Wait 3-5 minutes for deployment (Playwright download takes time)
    - Get your URL: `https://ai-fundraising-scraper.onrender.com`
+
+## Alternative: Docker Deployment (Recommended for JS Rendering)
+
+If the native Python build fails due to greenlet/Playwright compatibility issues:
+
+1. **Create Web Service from Docker:**
+   - Click "New +" → "Web Service"
+   - Select "Docker" as the environment
+   - The `Dockerfile` in the repo will be auto-detected
+   
+2. **Configure:**
+   - **Name:** `ai-fundraising-scraper`
+   - **Instance Type:** Starter ($7/mo) or higher (Free tier may timeout)
+   - Render will build from `Dockerfile` automatically
+
+3. **Benefits:**
+   - Guaranteed Python 3.11 with Playwright support
+   - Full JS rendering for React/Vue/Angular sites
+   - More reliable for production use
 
 ## API Endpoints
 

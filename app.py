@@ -8,6 +8,88 @@ import time
 import random
 import hashlib
 from datetime import datetime, timedelta
+import asyncio
+import os
+
+# ============================================
+# PLAYWRIGHT HEADLESS BROWSER SUPPORT
+# For JavaScript-heavy websites like React/Vue/Angular
+# ============================================
+
+PLAYWRIGHT_AVAILABLE = False
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+    print("✅ Playwright available for JS rendering")
+except ImportError:
+    print("⚠️ Playwright not available - JS sites may have limited content")
+
+# Threshold for triggering headless browser rendering
+MIN_RAW_TEXT_LENGTH = 1000  # If less than this, try Playwright
+
+async def render_with_playwright_async(url, timeout=30000):
+    """
+    Render a JavaScript-heavy page using Playwright headless browser.
+    Returns the fully rendered HTML after JS execution.
+    """
+    try:
+        async with async_playwright() as p:
+            # Use Chromium for best compatibility
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-gpu',
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-setuid-sandbox'
+                ]
+            )
+            
+            context = await browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                viewport={'width': 1920, 'height': 1080}
+            )
+            
+            page = await context.new_page()
+            
+            # Navigate and wait for network to be idle
+            await page.goto(url, wait_until='networkidle', timeout=timeout)
+            
+            # Additional wait for dynamic content
+            await page.wait_for_timeout(2000)
+            
+            # Get rendered HTML
+            rendered_html = await page.content()
+            
+            await browser.close()
+            
+            print(f"🎭 Playwright rendered HTML length: {len(rendered_html)}")
+            return rendered_html
+            
+    except Exception as e:
+        print(f"⚠️ Playwright rendering failed: {str(e)}")
+        return None
+
+def render_with_playwright(url):
+    """
+    Synchronous wrapper for Playwright rendering.
+    Creates a new event loop to run the async function.
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        print("⚠️ Playwright not installed - skipping JS rendering")
+        return None
+    
+    try:
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(render_with_playwright_async(url))
+        finally:
+            loop.close()
+    except Exception as e:
+        print(f"⚠️ Playwright sync wrapper failed: {str(e)}")
+        return None
 
 app = Flask(__name__)
 CORS(app)  # Allow requests from your Next.js app
@@ -769,6 +851,40 @@ def scrape():
         
         # STAGE 1: Deterministic extraction (NO AI)
         scraped_data = extract_deterministic_content(soup, url)
+        
+        # ============================================
+        # PLAYWRIGHT FALLBACK FOR JS-HEAVY SITES
+        # If raw_text is too short, the page likely uses JS rendering
+        # ============================================
+        raw_text_len = len(scraped_data.get('raw_text', ''))
+        print(f"📝 Initial raw_text length: {raw_text_len}")
+        
+        if raw_text_len < MIN_RAW_TEXT_LENGTH and PLAYWRIGHT_AVAILABLE:
+            print(f"🎭 Raw text too short ({raw_text_len} < {MIN_RAW_TEXT_LENGTH}) - attempting Playwright render...")
+            
+            rendered_html = render_with_playwright(url)
+            
+            if rendered_html and len(rendered_html) > len(response.content):
+                print(f"🎭 Rendered HTML length: {len(rendered_html)}")
+                
+                # Re-parse with Playwright-rendered HTML
+                soup = BeautifulSoup(rendered_html, 'html.parser')
+                
+                # Re-detect website type with full content
+                website_type = detect_website_type(soup, url)
+                print(f"🔍 Re-detected website type: {website_type['type']} (after JS render)")
+                
+                # Re-extract content with full DOM
+                scraped_data = extract_deterministic_content(soup, url)
+                scraped_data['js_rendered'] = True
+                
+                new_raw_text_len = len(scraped_data.get('raw_text', ''))
+                print(f"📝 New raw_text length after JS render: {new_raw_text_len}")
+            else:
+                print(f"⚠️ Playwright render didn't improve content")
+                scraped_data['js_rendered'] = False
+        else:
+            scraped_data['js_rendered'] = False
         
         # Add website type classification
         scraped_data['website_type'] = website_type
@@ -1549,3 +1665,4 @@ def extract_clean_text(soup):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
+
